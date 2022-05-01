@@ -1,0 +1,318 @@
+{
+    "name": "pipeline1",
+    "properties": {
+        "activities": [
+            {
+                "name": "Get Metadata for each partition files",
+                "type": "GetMetadata",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "7.00:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "dataset": {
+                        "referenceName": "cdm_xml_single_root_source_dataset_no_loop",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "container": {
+                                "value": "@pipeline().parameters.container",
+                                "type": "Expression"
+                            },
+                            "root_path": {
+                                "value": "@concat(pipeline().parameters.xml_single_root_path, '/', pipeline().parameters.partition_folder)",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    "fieldList": [
+                        "childItems"
+                    ],
+                    "storeSettings": {
+                        "type": "AzureBlobFSReadSettings",
+                        "recursive": true,
+                        "enablePartitionDiscovery": false
+                    }
+                }
+            },
+            {
+                "name": "ForEach1",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "Get Metadata for each partition files",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Get Metadata for each partition files').output.childItems",
+                        "type": "Expression"
+                    },
+                    "activities": [
+                        {
+                            "name": "Parse XML 2 JSON",
+                            "type": "Copy",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "source": {
+                                    "type": "XmlSource",
+                                    "storeSettings": {
+                                        "type": "AzureBlobFSReadSettings",
+                                        "recursive": true,
+                                        "wildcardFolderPath": {
+                                            "value": "@concat(pipeline().parameters.xml_single_root_path, '/', pipeline().parameters.partition_folder)",
+                                            "type": "Expression"
+                                        },
+                                        "wildcardFileName": {
+                                            "value": "@item().name",
+                                            "type": "Expression"
+                                        },
+                                        "enablePartitionDiscovery": false
+                                    },
+                                    "formatSettings": {
+                                        "type": "XmlReadSettings",
+                                        "validationMode": "none",
+                                        "detectDataType": false,
+                                        "namespaces": true
+                                    }
+                                },
+                                "sink": {
+                                    "type": "JsonSink",
+                                    "storeSettings": {
+                                        "type": "AzureBlobFSWriteSettings"
+                                    },
+                                    "formatSettings": {
+                                        "type": "JsonWriteSettings"
+                                    }
+                                },
+                                "enableStaging": false,
+                                "enableSkipIncompatibleRow": true
+                            },
+                            "inputs": [
+                                {
+                                    "referenceName": "cdm_xml_single_root_source_dataset_no_loop",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                        "container": {
+                                            "value": "@pipeline().parameters.container",
+                                            "type": "Expression"
+                                        },
+                                        "root_path": {
+                                            "value": "@pipeline().parameters.xml_single_root_path",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "referenceName": "cdm_jsoin_sinked_file_no_loop",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                        "container": {
+                                            "value": "@pipeline().parameters.container",
+                                            "type": "Expression"
+                                        },
+                                        "root_path": {
+                                            "value": "@concat(pipeline().parameters.json_path, '/', pipeline().parameters.partition_folder)",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "Malformed XML handling",
+                            "type": "SqlServerStoredProcedure",
+                            "dependsOn": [
+                                {
+                                    "activity": "Parse XML 2 JSON",
+                                    "dependencyConditions": [
+                                        "Failed"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "storedProcedureName": "[adle_platform_orchestration].[elt_error_log_proc]",
+                                "storedProcedureParameters": {
+                                    "created_date_time": {
+                                        "value": {
+                                            "value": "@utcnow()",
+                                            "type": "Expression"
+                                        },
+                                        "type": "DateTime"
+                                    },
+                                    "db_name": {
+                                        "value": "ADLS Gen2",
+                                        "type": "String"
+                                    },
+                                    "error_nbr": {
+                                        "value": {
+                                            "value": "@activity('Parse XML 2 JSON').error.errorCode",
+                                            "type": "Expression"
+                                        },
+                                        "type": "Int32"
+                                    },
+                                    "error_severity": {
+                                        "value": null,
+                                        "type": "Int32"
+                                    },
+                                    "error_state": {
+                                        "value": null,
+                                        "type": "Int32"
+                                    },
+                                    "event_type": {
+                                        "value": "ERROR",
+                                        "type": "String"
+                                    },
+                                    "message": {
+                                        "value": {
+                                            "value": "@activity('Parse XML 2 JSON').error.message",
+                                            "type": "Expression"
+                                        },
+                                        "type": "String"
+                                    },
+                                    "object_name": {
+                                        "value": "ADF activity",
+                                        "type": "String"
+                                    },
+                                    "object_type": {
+                                        "value": "Copy data activity",
+                                        "type": "String"
+                                    },
+                                    "pipeline_name": {
+                                        "value": {
+                                            "value": "@pipeline().parameters.pipeline_name",
+                                            "type": "Expression"
+                                        },
+                                        "type": "String"
+                                    },
+                                    "pipeline_run_id": {
+                                        "value": {
+                                            "value": "@pipeline().parameters.pipeline_run_id",
+                                            "type": "Expression"
+                                        },
+                                        "type": "String"
+                                    },
+                                    "pipeline_trigger_date_time_utc": {
+                                        "value": {
+                                            "value": "@pipeline().parameters.pipeline_trigger_time",
+                                            "type": "Expression"
+                                        },
+                                        "type": "DateTime"
+                                    },
+                                    "pipeline_trigger_id": {
+                                        "value": {
+                                            "value": "@pipeline().parameters.pipeline_trigger_id",
+                                            "type": "Expression"
+                                        },
+                                        "type": "String"
+                                    },
+                                    "pipeline_trigger_name": {
+                                        "value": {
+                                            "value": "@pipeline().parameters.pipeline_trigger_name",
+                                            "type": "Expression"
+                                        },
+                                        "type": "String"
+                                    },
+                                    "pipeline_trigger_type": {
+                                        "value": {
+                                            "value": "@pipeline().parameters.pipeline_trigger_type",
+                                            "type": "Expression"
+                                        },
+                                        "type": "String"
+                                    },
+                                    "schema_name": {
+                                        "value": {
+                                            "value": "@pipeline().parameters.schema",
+                                            "type": "Expression"
+                                        },
+                                        "type": "String"
+                                    }
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "ln_ADLE_SYNWS01_DB01",
+                                "type": "LinkedServiceReference"
+                            }
+                        }
+                    ]
+                }
+            }
+        ],
+        "parameters": {
+            "container": {
+                "type": "string",
+                "defaultValue": "stg"
+            },
+            "xml_single_root_path": {
+                "type": "string",
+                "defaultValue": "customer/confidential/cdm/ejkb/cdm_xml_single_root/ingest_channel=soup-nifi"
+            },
+            "json_path": {
+                "type": "string",
+                "defaultValue": "customer/confidential/cdm/ejkb/cdm_json/ingest_channel=soup-nifi"
+            },
+            "pipeline_name": {
+                "type": "string",
+                "defaultValue": "manual"
+            },
+            "pipeline_run_id": {
+                "type": "string",
+                "defaultValue": "manual"
+            },
+            "pipeline_trigger_id": {
+                "type": "string",
+                "defaultValue": "manual"
+            },
+            "pipeline_trigger_time": {
+                "type": "string",
+                "defaultValue": "manual"
+            },
+            "pipeline_trigger_type": {
+                "type": "string",
+                "defaultValue": "manual"
+            },
+            "pipeline_trigger_name": {
+                "type": "string",
+                "defaultValue": "manual"
+            },
+            "schema": {
+                "type": "string",
+                "defaultValue": "trans_customer_cdm_ejkb"
+            },
+            "partition_folder": {
+                "type": "string",
+                "defaultValue": "ingest_time=2022-04-25-10"
+            }
+        },
+        "folder": {
+            "name": "Data Function/stg2pub/stg2trans"
+        },
+        "annotations": []
+    }
+}
